@@ -219,10 +219,12 @@ async fn api_splats(State(state): State<Arc<AppState>>) -> Json<serde_json::Valu
     let splats = state.latest_splats.lock().unwrap();
     let frames = *state.frame_count.lock().unwrap();
     let pipeline = state.latest_pipeline.lock().unwrap();
+    let csi_live = pipeline.as_ref().map(|p| p.csi_live).unwrap_or(false);
     Json(serde_json::json!({
         "splats": &*splats,
         "count": splats.len(),
         "live": state.use_camera,
+        "csi_live": csi_live,
         "frame": frames,
         "pipeline": &*pipeline,
         "timestamp": chrono::Utc::now().timestamp_millis(),

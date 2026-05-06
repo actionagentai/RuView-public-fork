@@ -65,6 +65,9 @@ pub struct CsiPipelineState {
     pub current_location: Option<(String, f32)>,
     /// Night mode — true when camera luminance is below threshold
     pub is_dark: bool,
+    /// Wall-clock instant the last real ESP32 UDP CSI frame was received.
+    /// `None` if no frame has arrived since startup.
+    pub last_csi_received: Option<std::time::Instant>,
     /// Metadata from the on-disk WiFlow JSON, if one is present. NOTE: the
     /// weights themselves are NOT loaded or executed in this crate — this
     /// flag merely enables the amplitude-energy heuristic pose code path.
@@ -91,6 +94,7 @@ impl Default for CsiPipelineState {
             fingerprints: Vec::new(),
             current_location: None,
             is_dark: false,
+            last_csi_received: None,
             pose_model_present: detect_pose_model_metadata(),
         }
     }
@@ -133,6 +137,7 @@ impl CsiPipelineState {
     pub fn process_frame(&mut self, frame: CsiFrame) {
         let node_id = frame.node_id;
         self.total_frames += 1;
+        self.last_csi_received = Some(std::time::Instant::now());
 
         // Once every 500 frames log a one-line node stats summary. This keeps
         // us honest about the CSI shape we are actually receiving and also
@@ -584,6 +589,9 @@ pub fn get_pipeline_output(state: &Arc<Mutex<CsiPipelineState>>) -> PipelineOutp
         num_nodes: st.node_frames.len(),
         current_location: st.current_location.clone(),
         is_dark: st.is_dark,
+        csi_live: st.last_csi_received
+            .map(|t| t.elapsed() < std::time::Duration::from_secs(5))
+            .unwrap_or(false),
     }
 }
 
@@ -598,6 +606,10 @@ pub struct PipelineOutput {
     pub num_nodes: usize,
     pub current_location: Option<(String, f32)>,
     pub is_dark: bool,
+    /// True when a real ESP32 CSI frame was received in the last 5 seconds.
+    /// False means the pipeline is running on stale data — show a NO SIGNAL
+    /// indicator in the UI rather than presenting stale skeletons as live.
+    pub csi_live: bool,
 }
 
 // Serialize implementations

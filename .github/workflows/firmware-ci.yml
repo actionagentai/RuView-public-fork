@@ -98,6 +98,32 @@ jobs:
             echo "Flash image integrity verified"
           fi
 
+      - name: Verify embedded version string matches version.txt (fixes #505)
+        working-directory: firmware/esp32-csi-node
+        run: |
+          EXPECTED=$(cat version.txt | tr -d '[:space:]')
+          BIN=build/esp32-csi-node.bin
+          # Extract version from ESP-IDF app_desc: magic 0xABCD5432 at offset 0
+          # followed by version string at offset 16, null-terminated, max 32 chars.
+          EMBEDDED=$(python3 -c "
+import struct, sys
+data = open('$BIN','rb').read()
+magic = struct.pack('<I', 0xABCD5432)
+i = data.find(magic)
+if i < 0:
+    sys.exit('app_desc magic not found')
+ver = data[i+16:i+48].split(b'\\x00',1)[0].decode('ascii','replace')
+print(ver)
+" 2>&1)
+          echo "Expected version: $EXPECTED"
+          echo "Embedded version: $EMBEDDED"
+          if [ "$EMBEDDED" != "$EXPECTED" ]; then
+            echo "::error::Version string mismatch! version.txt='$EXPECTED' but binary reports '$EMBEDDED'."
+            echo "::error::Ensure version.txt is updated before building and tagging."
+            exit 1
+          fi
+          echo "Version string verified: $EMBEDDED"
+
       - name: Stage release binaries with variant-specific names
         working-directory: firmware/esp32-csi-node
         run: |

@@ -21,6 +21,17 @@
         .face { color: #4cf; }
         .section { margin-top: 6px; padding-top: 6px; border-top: 1px solid #333; }
         .label { color: #888; }
+        #no-signal {
+            display: none;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(160,0,0,0.93); color: #fff;
+            font-family: monospace; font-size: 18px; font-weight: bold;
+            padding: 18px 32px; border-radius: 8px;
+            border: 2px solid #f44; text-align: center;
+            pointer-events: none; z-index: 20;
+        }
+        #no-signal .sub { font-size: 12px; font-weight: normal; margin-top: 6px; color: #fbb; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -29,6 +40,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
 </head>
 <body>
+    <div id="no-signal">
+        &#x25CF; NO CSI SIGNAL
+        <div class="sub">No ESP32 frames received for &gt;5s.<br>Check that your node is powered and provisioned.</div>
+    </div>
     <div id="info">
         <h3 style="margin:0 0 4px 0">RuView · Seldon Vault</h3>
         <div style="font-size: 11px; color: #888; margin-bottom: 8px; max-width: 240px; line-height: 1.4; font-style: italic;">"Psychohistory deals with reactions of human conglomerates to fixed social and economic stimuli." — Hari Seldon</div>
@@ -56,6 +71,11 @@
         var skeletonGroup = null;
         var prevTimestamp = 0;
         var frameRateVal = 0;
+        // No-signal detection: track server-reported csi_live flag
+        var noSignalBanner = document.getElementById("no-signal");
+        function setNoSignal(isNoSignal) {
+            noSignalBanner.style.display = isNoSignal ? "block" : "none";
+        }
 
         // COCO skeleton connections: pairs of keypoint indices
         // 0=nose 1=leftEye 2=rightEye 3=leftEar 4=rightEar
@@ -579,9 +599,18 @@
                     data._faceOverlay = faceOverlay;
                     updateSplats(rendered);
 
-                    // Draw skeleton if available
+                    // No-signal detection: hide skeleton and show banner when
+                    // the server reports no live CSI frames in the last 5s.
                     var pipe = data.pipeline;
-                    if (pipe && pipe.skeleton && pipe.skeleton.keypoints) {
+                    var csiLive = data.csi_live || (pipe && pipe.csi_live);
+                    // Only show no-signal when connected to a real backend
+                    // (not demo/face-mesh mode where csi_live is always false).
+                    var showNoSignal = (transportMode === "live" || transportMode === "remote")
+                        && csiLive === false;
+                    setNoSignal(showNoSignal);
+                    if (showNoSignal) {
+                        clearSkeleton();
+                    } else if (pipe && pipe.skeleton && pipe.skeleton.keypoints) {
                         drawSkeleton(pipe.skeleton.keypoints);
                     } else {
                         clearSkeleton();
