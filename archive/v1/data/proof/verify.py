@@ -116,6 +116,48 @@ def print_source_provenance():
     print()
 
 
+def print_runtime_environment():
+    """Print the platform + numpy/scipy BLAS backend.
+
+    The proof pipeline's SHA-256 is sensitive to the BLAS / FFT backend
+    behind numpy + scipy.fft. Different platforms ship different backends
+    (OpenBLAS on Linux/Windows wheels, Accelerate.framework on macOS arm64,
+    MKL when installed) and they produce bit-different output on identical
+    IEEE 754 inputs. Surfacing the backend up front turns an unexplained
+    MISMATCH into a one-line diagnosis -- see issue #560.
+    """
+    import platform
+    print("  RUNTIME ENVIRONMENT:")
+    print(f"    Platform     : {platform.platform()}")
+    print(f"    Machine      : {platform.machine()}")
+    print(f"    Python       : {platform.python_version()} ({platform.python_implementation()})")
+
+    # numpy BLAS / LAPACK backend.
+    try:
+        blas_info = np.__config__.blas_ilp64_opt_info  # type: ignore[attr-defined]
+        backend = getattr(blas_info, "get", lambda *_: None)("libraries", None) or "unknown"
+    except Exception:
+        # Newer numpy (>= 1.26) reports via show_config(); fall back to a stringified dump.
+        try:
+            import io
+            buf = io.StringIO()
+            np.show_config(mode="dicts") if hasattr(np, "show_config") else None
+            # `show_config(mode='dicts')` returns a dict in numpy >= 1.26.
+            cfg = np.show_config(mode="dicts") if hasattr(np, "show_config") else {}
+            if isinstance(cfg, dict):
+                blas = cfg.get("Build Dependencies", {}).get("blas", {})
+                backend = blas.get("name", "unknown")
+            else:
+                backend = "unknown"
+        except Exception:
+            backend = "unknown"
+    print(f"    numpy BLAS   : {backend}")
+    print("    (FFT/BLAS backend affects the hash -- see #560 if MISMATCH on")
+    print("     macOS arm64 / Accelerate. Reference platforms: linux-x86_64,")
+    print("     windows-x86_64 with OpenBLAS; see expected_features.sha256.)")
+    print()
+
+
 def load_reference_signal(data_path):
     """Load the reference CSI signal from JSON.
 
@@ -417,6 +459,7 @@ def main():
     # ---------------------------------------------------------------
     print("[0/4] SOURCE PROVENANCE")
     print_source_provenance()
+    print_runtime_environment()
 
     # ---------------------------------------------------------------
     # Step 1: Load and describe reference signal
@@ -518,13 +561,23 @@ def main():
         print()
         print("  The pipeline output does NOT match the expected hash.")
         print()
-        print("  Possible causes:")
-        print("    - Numpy/scipy version mismatch (check requirements)")
-        print("    - Code change in CSI processor that alters numerical output")
-        print("    - Platform floating-point differences (unlikely for IEEE 754)")
+        print("  Likely causes, in order of probability:")
+        print("    1. Platform BLAS/FFT backend differs from the reference.")
+        print("       The expected hash was generated on linux-x86_64 +")
+        print("       windows-x86_64 with OpenBLAS. macOS arm64 ships with")
+        print("       Accelerate.framework, which produces bit-different FFT")
+        print("       output on identical inputs (issue #560). Inspect the")
+        print("       RUNTIME ENVIRONMENT block printed at the top of this run.")
+        print("    2. Numpy/scipy version mismatch.")
+        print("       Install pinned versions: pip install -r archive/v1/requirements-lock.txt")
+        print("    3. Real code change in the CSI processor that alters output.")
+        print("       Investigate the diff against the reference commit.")
         print()
-        print("  To update the expected hash after intentional changes:")
+        print("  To regenerate the expected hash on a NEW reference platform:")
         print("    python verify.py --generate-hash")
+        print("  (Only do this if you intend to publish a new reference; the")
+        print("   single-platform contract of expected_features.sha256 is")
+        print("   documented at the top of that file.)")
         print("=" * 72)
         sys.exit(1)
 
