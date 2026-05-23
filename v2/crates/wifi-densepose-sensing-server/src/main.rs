@@ -293,6 +293,38 @@ struct NodeInfo {
     position: [f64; 3],
     amplitude: Vec<f64>,
     subcarrier_count: usize,
+    /// ADR-110 iter 23 — cross-board sync snapshot for this node.
+    /// `None` when no fresh sync packet has been observed (no mesh peer
+    /// reachable, or this node is a singleton). Populated from
+    /// `NodeState::latest_sync` and the iter 18 fps EMA.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sync: Option<NodeSyncSnapshot>,
+}
+
+/// ADR-110 iter 23 — per-node mesh-sync snapshot embedded in NodeInfo.
+/// Surfaces what was previously only visible in the debug log so UI clients
+/// can render leader / follower / offset / measured-fps live.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NodeSyncSnapshot {
+    /// Smoothed local-vs-mesh offset in µs (negative when this node's clock
+    /// is behind the leader's — see §A0.10's measured -1.16 s on the bench).
+    offset_us: i64,
+    /// True when this node is the elected mesh leader.
+    is_leader: bool,
+    /// True when this node has heard a fresh leader beacon within the
+    /// firmware's VALID_WINDOW_MS gate (3 s).
+    is_valid: bool,
+    /// True once the EMA-smoothed offset has seeded (one full beacon round-trip).
+    smoothed: bool,
+    /// Sync packet's sequence high-water — used by the host to pair CSI
+    /// frames against this snapshot for §A0.12 mesh-time recovery.
+    sequence: u32,
+    /// Per-node measured CSI frame rate (iter 18 EMA). 20.0 until the
+    /// EMA has at least 5 samples; the actually-observed rate after that.
+    csi_fps_ema: f64,
+    /// How many CSI frames have contributed to `csi_fps_ema`. Clients can
+    /// treat <5 as "not yet trustworthy" and fall back to 20 Hz.
+    csi_fps_samples: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2034,6 +2066,7 @@ async fn windows_wifi_task(state: SharedState, tick_ms: u64) {
                 position: [0.0, 0.0, 0.0],
                 amplitude: multi_ap_frame.amplitudes,
                 subcarrier_count: obs_count,
+                sync: None,  // multi-BSSID scan path — no mesh peer
             }],
             features,
             classification,
@@ -2178,6 +2211,7 @@ async fn windows_wifi_fallback_tick(state: &SharedState, seq: u32) {
             position: [0.0, 0.0, 0.0],
             amplitude: vec![signal_pct],
             subcarrier_count: 1,
+            sync: None,  // synthetic-RSSI fallback path — no mesh peer
         }],
         features,
         classification,
@@ -4178,6 +4212,17 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                             position: [2.0, 0.0, 1.5],
                             amplitude: vec![],
                             subcarrier_count: 0,
+                            // Vitals-only path; still expose the sync snapshot
+                            // if the node also speaks ESP-NOW.
+                            sync: n.latest_sync.as_ref().map(|s| NodeSyncSnapshot {
+                                offset_us: s.local_minus_epoch_us(),
+                                is_leader: s.flags.is_leader,
+                                is_valid: s.flags.is_valid,
+                                smoothed: s.flags.smoothed_used,
+                                sequence: s.sequence,
+                                csi_fps_ema: n.csi_fps_ema,
+                                csi_fps_samples: n.csi_fps_samples,
+                            }),
                         })
                         .collect();
 
@@ -4501,6 +4546,16 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                                 .map(|a| a.iter().take(56).cloned().collect())
                                 .unwrap_or_default(),
                             subcarrier_count: n.frame_history.back().map_or(0, |a| a.len()),
+                            // ADR-110 iter 23: snapshot the latest mesh sync.
+                            sync: n.latest_sync.as_ref().map(|s| NodeSyncSnapshot {
+                                offset_us: s.local_minus_epoch_us(),
+                                is_leader: s.flags.is_leader,
+                                is_valid: s.flags.is_valid,
+                                smoothed: s.flags.smoothed_used,
+                                sequence: s.sequence,
+                                csi_fps_ema: n.csi_fps_ema,
+                                csi_fps_samples: n.csi_fps_samples,
+                            }),
                         })
                         .collect();
 
@@ -4646,6 +4701,7 @@ async fn simulated_data_task(state: SharedState, tick_ms: u64) {
                 position: [2.0, 0.0, 1.5],
                 amplitude: frame_amplitudes,
                 subcarrier_count: frame_n_sub as usize,
+                sync: None,  // simulated frame path — no mesh peer
             }],
             features: features.clone(),
             classification,
