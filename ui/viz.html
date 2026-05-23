@@ -84,9 +84,23 @@
     <div id="stats-container"></div>
   </div>
 
-  <!-- Three.js and OrbitControls from CDN -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Three.js r160 dropped examples/js/. Load via importmap and expose
+       THREE + OrbitControls as globals so the existing component modules
+       (scene.js, body-model.js, …) keep working without an audit. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    window.THREE = THREE;
+    THREE.OrbitControls = OrbitControls;
+  </script>
   <!-- Stats.js for performance monitoring -->
   <script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js"></script>
 
@@ -100,6 +114,7 @@
     import { DashboardHUD } from './components/dashboard-hud.js';
     import { WebSocketClient } from './services/websocket-client.js';
     import { DataProcessor } from './services/data-processor.js';
+    import { buildSensingWsUrl } from './services/sensing.service.js';
 
     // -- Application State --
     const state = {
@@ -175,9 +190,12 @@
         state.stats = initStats();
         setLoadingProgress(85, 'Connecting to server...');
 
-        // 8. WebSocket client
+        // 8. WebSocket client — derive URL from window.location so the page
+        //    works on both default (HTTP 8080 / WS 8765) and Docker (3000/3001)
+        //    port pairings. `?ws=…` query overrides for advanced setups.
+        const wsOverride = new URLSearchParams(window.location.search).get('ws');
         state.wsClient = new WebSocketClient({
-          url: 'ws://localhost:8000/ws/pose',
+          url: wsOverride || buildSensingWsUrl(),
           onMessage: (msg) => handleWebSocketMessage(msg),
           onStateChange: (newState, oldState) => handleConnectionStateChange(newState, oldState),
           onError: (err) => console.error('[VIZ] WebSocket error:', err)
