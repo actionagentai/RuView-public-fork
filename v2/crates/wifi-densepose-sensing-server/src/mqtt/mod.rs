@@ -37,6 +37,7 @@
 pub mod config;
 pub mod discovery;
 pub mod privacy;
+pub mod security;
 // State encoders + rate limiter compile without rumqttc, so they're
 // available for testing under `--no-default-features`. Only the
 // publisher itself (which holds the `rumqttc::AsyncClient`) needs the

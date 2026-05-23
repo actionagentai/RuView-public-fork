@@ -89,3 +89,12 @@ matter = []
 tempfile = "3.10"
 # `tower::ServiceExt::oneshot` for in-process Router tests (bearer_auth).
 tower = { workspace = true }
+# ADR-115 P9 — micro-benchmarks for MQTT hot paths + semantic bus.
+# Heavy dep tree (~80 transitive crates) so it's dev-only; benches live
+# behind --features mqtt because they bench the mqtt module.
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "mqtt_throughput"
+harness = false
+required-features = ["mqtt"]
