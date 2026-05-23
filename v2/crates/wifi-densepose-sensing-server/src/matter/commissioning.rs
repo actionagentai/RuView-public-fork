@@ -295,4 +295,89 @@ mod tests {
         let s = SetupCodeInput::dev(11111111, 3840);
         assert!(ManualPairingCode::from_input(&s).is_err());
     }
+
+    // ─── Property-based invariants for the commissioning encoder ─────
+
+    use proptest::prelude::*;
+
+    /// The §5.1.6.1 disallowed-passcodes set, hoisted to a const for
+    /// reuse in property tests.
+    const DISALLOWED_PASSCODES: &[u32] = &[
+        0u32, 11111111, 22222222, 33333333, 44444444, 55555555,
+        66666666, 77777777, 88888888, 99999999, 12345678, 87654321,
+    ];
+
+    proptest! {
+        /// For ANY (passcode, discriminator) in the valid range that
+        /// is not in the §5.1.6.1 disallowed set, from_input MUST
+        /// produce a code with the same shape:
+        ///   - exactly 11 ASCII digits
+        ///   - Verhoeff-self-consistent
+        ///   - 4-3-4 display form is 13 chars with dashes at positions 4 and 8
+        #[test]
+        fn manual_code_shape_invariants(
+            passcode in 1u32..((1 << 27) - 1),
+            disc in 0u16..4095,
+        ) {
+            // Reject the disallowed-by-spec set inside the proptest body
+            // so the input strategy stays simple.
+            prop_assume!(!DISALLOWED_PASSCODES.contains(&passcode));
+
+            let s = SetupCodeInput::dev(passcode, disc);
+            let code = ManualPairingCode::from_input(&s);
+            prop_assert!(code.is_ok(), "valid input rejected: {:?}", code.err());
+            let code = code.unwrap();
+
+            // 11 ASCII digits.
+            prop_assert_eq!(code.0.len(), 11);
+            prop_assert!(code.0.chars().all(|c| c.is_ascii_digit()));
+
+            // Verhoeff self-consistency.
+            let body = &code.0[0..10];
+            let body_digit = code.0[10..11].parse::<u8>().unwrap();
+            prop_assert_eq!(verhoeff_check_digit(body), body_digit);
+
+            // 4-3-4 form.
+            let pretty = code.display_4_3_4();
+            prop_assert_eq!(pretty.len(), 13);
+            prop_assert_eq!(&pretty[4..5], "-");
+            prop_assert_eq!(&pretty[8..9], "-");
+        }
+
+        /// Every disallowed passcode in the §5.1.6.1 list MUST be
+        /// rejected by validate(), regardless of discriminator.
+        #[test]
+        fn disallowed_passcodes_always_rejected(
+            disc in 0u16..4095,
+            bad_idx in 0usize..DISALLOWED_PASSCODES.len(),
+        ) {
+            let bad = DISALLOWED_PASSCODES[bad_idx];
+            let s = SetupCodeInput::dev(bad, disc);
+            prop_assert!(s.validate().is_err(), "passcode {} must be rejected", bad);
+        }
+
+        /// Oversized inputs always rejected, regardless of the
+        /// allowed dim.
+        #[test]
+        fn oversized_inputs_always_rejected(
+            big_pin in (1u32 << 27)..u32::MAX,
+            big_disc in 4096u16..,
+        ) {
+            prop_assert!(SetupCodeInput::dev(big_pin, 100).validate().is_err());
+            prop_assert!(SetupCodeInput::dev(20202021, big_disc).validate().is_err());
+        }
+
+        /// Same input → same code (determinism property under random sampling).
+        #[test]
+        fn manual_code_deterministic_under_random_input(
+            passcode in 1u32..((1 << 27) - 1),
+            disc in 0u16..4095,
+        ) {
+            prop_assume!(!DISALLOWED_PASSCODES.contains(&passcode));
+            let s = SetupCodeInput::dev(passcode, disc);
+            let a = ManualPairingCode::from_input(&s).unwrap();
+            let b = ManualPairingCode::from_input(&s).unwrap();
+            prop_assert_eq!(a, b);
+        }
+    }
 }
