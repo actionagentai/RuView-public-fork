@@ -217,9 +217,16 @@ size_t csi_serialize_frame(const wifi_csi_info_t *info, uint8_t *buf, size_t buf
     if (info->rx_ctrl.cwb) flags |= 0x1;            /* bw 40 MHz */
     if (info->rx_ctrl.stbc) flags |= (1 << 2);      /* STBC */
 #endif  /* CONFIG_SOC_WIFI_HE_SUPPORT */
+    /* ADR-018 byte 19 bit 4 = "cross-node sync valid". Two transports can
+     * set it: the original 802.15.4 c6_timesync (broken in IDF v5.4 — D1)
+     * and the ESP-NOW workaround c6_sync_espnow (measured working in §A0.7-
+     * §A0.10). OR them together so frames signal sync from whichever
+     * transport is alive on this node. Host can pair against the sync
+     * packet (§A0.12) once it sees this bit. */
 #if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_C6_TIMESYNC_ENABLE)
     if (c6_timesync_is_valid()) flags |= (1 << 4);  /* 15.4 sync valid */
 #endif
+    if (c6_sync_espnow_is_valid()) flags |= (1 << 4);  /* ESP-NOW sync valid (D1 workaround) */
     buf[18] = ppdu_type;
     buf[19] = flags;
 #else
