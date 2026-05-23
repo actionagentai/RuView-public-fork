@@ -261,11 +261,13 @@ async fn privacy_mode_suppresses_biometric_discovery() {
 async fn state_messages_published_on_snapshot_broadcast() {
     let Some(port) = should_run() else { return; };
 
-    let (sub, mut sub_loop) = subscribe_client(
-        port,
-        &["homeassistant/binary_sensor/+/presence/state"],
-    )
-    .await;
+    // Subscribe to the entire homeassistant tree so the diagnostic
+    // capture shows EVERYTHING the publisher is doing, not just
+    // the narrow presence/state filter — narrow filters can hide
+    // ordering issues (e.g., if the publisher is publishing only
+    // discovery and not state, a narrow filter on state can't tell
+    // us that).
+    let (sub, mut sub_loop) = subscribe_client(port, &["homeassistant/#"]).await;
 
     let cfg = make_cfg(port, false, "state");
     let builder = make_builder("inttest3");
@@ -306,6 +308,19 @@ async fn state_messages_published_on_snapshot_broadcast() {
     let msgs = collect_published(&mut sub_loop, Duration::from_secs(8)).await;
     let _ = sub.disconnect().await;
 
+    // Diagnostic: dump every captured topic so we can see what (if
+    // anything) the subscriber received. CI runs with --nocapture, so
+    // this lands in the workflow log when the test fails.
+    eprintln!("[diag] subscriber captured {} messages:", msgs.len());
+    for (t, p, retain) in &msgs {
+        eprintln!(
+            "[diag]   retain={} topic={} payload={}",
+            retain,
+            t,
+            String::from_utf8_lossy(p).chars().take(80).collect::<String>(),
+        );
+    }
+
     let presence_states: Vec<String> = msgs
         .iter()
         .filter(|(t, _, _)| t.contains("/inttest3/presence/state"))
@@ -314,8 +329,9 @@ async fn state_messages_published_on_snapshot_broadcast() {
 
     assert!(
         presence_states.iter().any(|p| p == "ON"),
-        "expected ON state, got {:?}",
-        presence_states
+        "expected ON state, got {:?} (of {} total captured)",
+        presence_states,
+        msgs.len(),
     );
     assert!(
         presence_states.iter().any(|p| p == "OFF"),
