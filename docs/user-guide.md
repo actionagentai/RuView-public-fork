@@ -564,6 +564,66 @@ ws.onerror = (err) => console.error("WebSocket error:", err);
 wscat -c ws://localhost:3001/ws/sensing
 ```
 
+### Per-node mesh sync (ADR-110)
+
+Since firmware **v0.7.0-esp32** + sensing-server iter 23, every
+`sensing_update` whose nodes participate in the [ADR-110](adr/ADR-110-esp32-c6-firmware-extension.md)
+ESP-NOW mesh carries an optional `sync` object per node:
+
+```json
+{
+  "type": "sensing_update",
+  "nodes": [
+    {
+      "node_id": 9,
+      "rssi_dbm": -38.0,
+      "amplitude": [...],
+      "subcarrier_count": 64,
+      "sync": {
+        "offset_us":       1163565,
+        "is_leader":       false,
+        "is_valid":        true,
+        "smoothed":        true,
+        "sequence":        20,
+        "csi_fps_ema":     10.0,
+        "csi_fps_samples": 47
+      }
+    }
+  ]
+}
+```
+
+Field meanings:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `offset_us` | i64 | Smoothed local-vs-mesh clock offset in microseconds. Negative when this node is behind the leader. §A0.10 on the bench measured ~1.16 s boot delta between two C6 boards. |
+| `is_leader` | bool | True when this node is the elected mesh leader (lowest EUI-64 in the cohort). |
+| `is_valid` | bool | True when this node has heard a fresh leader beacon within the firmware's `VALID_WINDOW_MS = 3 s` freshness gate. |
+| `smoothed` | bool | True once the firmware-side EMA filter has seeded (after ~8 beacons ≈ 0.8 s of follower mode). |
+| `sequence` | u32 | High-water CSI sequence number stamped when this sync packet was emitted. Pair with the per-frame `sequence` field on incoming CSI to interpolate a mesh-aligned timestamp for any frame. |
+| `csi_fps_ema` | f64 | Per-node EMA of the observed CSI frame rate. Bench typical ≈ 10 Hz. |
+| `csi_fps_samples` | u32 | How many inter-frame deltas the EMA has seen. Treat values < 5 as "not yet trustworthy" and fall back to 20 Hz. |
+
+**When `sync` is omitted entirely**: the node isn't on the mesh (or
+hasn't heard a peer yet). Non-ESP32 paths — multi-BSSID router scan,
+synthetic-RSSI fallback, simulation — also omit `sync`. Existing
+pre-iter-23 UI clients ignore the new field naturally because they
+don't read it.
+
+**How to render this in a UI**:
+- `is_leader === true` → badge the node "Leader"
+- `is_valid === false` → grey out / "Sync lost"
+- `csi_fps_samples < 5` → label as "Calibrating" until ≥5 frames
+- `|offset_us|` trend → render a jitter histogram to show the §A0.10
+  EMA suppression working live
+
+**How to recover a mesh-aligned timestamp for any CSI frame from this
+node**: take the frame's own `sequence` u32, subtract `sync.sequence`,
+divide by `sync.csi_fps_ema` (or 20.0 if `csi_fps_samples < 5`),
+multiply by 1 000 000 µs — that's the mesh delta from the sync emit
+time. Use it to align multistatic frames from sibling boards.
+
 ---
 
 ## Web UI
