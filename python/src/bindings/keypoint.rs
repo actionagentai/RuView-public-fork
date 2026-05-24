@@ -147,6 +147,21 @@ impl From<PyKeypointType> for u8 {
     }
 }
 
+impl PyKeypoint {
+    /// Rust-side accessor for the inner Keypoint (used by pose.rs).
+    /// Not exposed to Python — Python users go through the
+    /// #[pymethods] getters above.
+    pub(crate) fn inner(&self) -> &Keypoint {
+        &self.inner
+    }
+
+    /// Rust-side constructor from a core Keypoint (used by pose.rs
+    /// when re-wrapping outputs of PersonPose methods).
+    pub(crate) fn from_rust(k: Keypoint) -> Self {
+        Self { inner: k }
+    }
+}
+
 // ─── Keypoint ────────────────────────────────────────────────────────
 
 /// Single skeletal joint with COCO type, 2D-or-3D position, and a

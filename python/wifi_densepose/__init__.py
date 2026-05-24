@@ -41,6 +41,9 @@ from wifi_densepose import _native
 # import Keypoint, KeypointType` — never reach into `_native`.
 Keypoint = _native.Keypoint
 KeypointType = _native.KeypointType
+BoundingBox = _native.BoundingBox
+PersonPose = _native.PersonPose
+PoseEstimate = _native.PoseEstimate
 
 
 __rust_version__: str = _native.__rust_version__
@@ -74,4 +77,7 @@ __all__ = [
     # P2 — core types
     "Keypoint",
     "KeypointType",
+    "BoundingBox",
+    "PersonPose",
+    "PoseEstimate",
 ]

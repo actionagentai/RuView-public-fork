@@ -18,6 +18,7 @@ use pyo3::prelude::*;
 
 mod bindings {
     pub mod keypoint;
+    pub mod pose;
 }
 
 /// Version of the bound Rust core. Surfaced to Python as
@@ -36,6 +37,7 @@ fn build_features() -> Vec<&'static str> {
     let mut feats: Vec<&'static str> = Vec::new();
     feats.push("p1-scaffold");
     feats.push("p2-keypoint-bindings"); // Keypoint + KeypointType
+    feats.push("p2-pose-bindings"); // BoundingBox + PersonPose + PoseEstimate
     feats
 }
 
@@ -67,5 +69,7 @@ fn wifi_densepose_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // P2 — Keypoint + KeypointType bindings.
     bindings::keypoint::register(m)?;
+    // P2 — BoundingBox + PersonPose + PoseEstimate bindings.
+    bindings::pose::register(m)?;
     Ok(())
 }
