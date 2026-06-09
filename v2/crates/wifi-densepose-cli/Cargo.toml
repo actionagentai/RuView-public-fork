@@ -24,6 +24,7 @@ mat = []
 wifi-densepose-mat = { version = "0.3.0", path = "../wifi-densepose-mat" }
 wifi-densepose-signal = { version = "0.3.1", path = "../wifi-densepose-signal", default-features = false }
 wifi-densepose-core = { version = "0.3.0", path = "../wifi-densepose-core" }
+wifi-densepose-calibration = { version = "0.3.0", path = "../wifi-densepose-calibration" }
 
 # Linear algebra / complex numbers (used by calibrate.rs to build CsiFrame)
 ndarray = { workspace = true }

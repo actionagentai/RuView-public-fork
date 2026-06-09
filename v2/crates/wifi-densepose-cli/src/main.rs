@@ -24,6 +24,18 @@ async fn main() -> anyhow::Result<()> {
         Commands::CalibrateServe(args) => {
             wifi_densepose_cli::calibrate_api::execute(args).await?;
         }
+        Commands::Enroll(args) => {
+            wifi_densepose_cli::room::enroll(args).await?;
+        }
+        Commands::TrainRoom(args) => {
+            wifi_densepose_cli::room::train_room(args).await?;
+        }
+        Commands::RoomStatus(args) => {
+            wifi_densepose_cli::room::room_status(args).await?;
+        }
+        Commands::RoomWatch(args) => {
+            wifi_densepose_cli::room::room_watch(args).await?;
+        }
         Commands::Mat(mat_cmd) => {
             wifi_densepose_cli::mat::execute(mat_cmd).await?;
         }

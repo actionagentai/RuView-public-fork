@@ -10812,6 +10812,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wifi-densepose-calibration"
+version = "0.3.0"
+dependencies = [
+ "ndarray 0.17.2",
+ "num-complex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+ "wifi-densepose-core",
+ "wifi-densepose-signal",
+]
+
+[[package]]
 name = "wifi-densepose-cli"
 version = "0.3.0"
 dependencies = [
@@ -10837,6 +10851,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wifi-densepose-calibration",
  "wifi-densepose-core",
  "wifi-densepose-mat",
  "wifi-densepose-signal",
